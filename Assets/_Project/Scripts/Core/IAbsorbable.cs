@@ -5,13 +5,12 @@ namespace SlimeHunter.Core
     /// <summary>O que o jogador ganha ao terminar de absorver algo.</summary>
     public struct AbsorbReward
     {
-        public float Health;
-        public float Mass;
+        /// <summary>Barras de tamanho recuperadas/ganhas.</summary>
+        public float SizeGain;
 
-        public AbsorbReward(float health, float mass)
+        public AbsorbReward(float sizeGain)
         {
-            Health = health;
-            Mass = mass;
+            SizeGain = sizeGain;
         }
     }
 

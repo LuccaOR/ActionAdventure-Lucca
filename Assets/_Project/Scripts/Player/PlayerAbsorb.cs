@@ -5,28 +5,25 @@ using UnityEngine;
 namespace SlimeHunter.Player
 {
     /// <summary>
-    /// Absorver inimigos derrotados: segure o botão olhando para a poça de slime.
-    /// Ao completar, recupera vida e gosma e conta para o crescimento do protagonista.
+    /// Absorver inimigos derrotados: o protagonista precisa estar EM CIMA do corpo (poça)
+    /// e segurar o botão. Ao completar, recupera vida e aumenta de tamanho.
     /// </summary>
     [RequireComponent(typeof(PlayerInputReader))]
     public class PlayerAbsorb : MonoBehaviour
     {
-        [SerializeField] Camera aimCamera;
-        [SerializeField] float range = 3.5f;
-        [SerializeField] float probeRadius = 0.5f;
-        [Tooltip("Ângulo (graus) para achar poças perto dos pés mesmo sem mirar exatamente nelas.")]
-        [SerializeField] float proximityAngle = 60f;
+        [Tooltip("Raio da área sob o slime que detecta a poça (escala com o tamanho).")]
+        [SerializeField] float feetRadius = 0.55f;
+        [Tooltip("Altura do centro da detecção acima dos pés.")]
+        [SerializeField] float feetHeight = 0.15f;
         [SerializeField] LayerMask mask = ~0;
         [Tooltip("Multiplicador de velocidade enquanto absorve.")]
         [SerializeField] float moveSpeedWhileAbsorbing = 0.35f;
 
-        static readonly RaycastHit[] CastHits = new RaycastHit[16];
         static readonly Collider[] OverlapHits = new Collider[32];
 
         PlayerInputReader input;
         PlayerMotor motor;
-        Health health;
-        SlimeMass mass;
+        PlayerSize size;
 
         IAbsorbable target;
         float progress;
@@ -34,8 +31,8 @@ namespace SlimeHunter.Player
         public bool IsAbsorbing => IsAlive(target);
         public float Progress01 => IsAbsorbing ? Mathf.Clamp01(progress) : 0f;
         public int TotalAbsorbed { get; private set; }
-        /// <summary>O que o jogador está olhando e pode absorver (para o HUD).</summary>
-        public IAbsorbable LookTarget { get; private set; }
+        /// <summary>Poça debaixo do jogador que pode ser absorvida (para o HUD).</summary>
+        public IAbsorbable Available { get; private set; }
 
         public event Action<IAbsorbable> AbsorbStarted;
         public event Action AbsorbCancelled;
@@ -46,21 +43,19 @@ namespace SlimeHunter.Player
         {
             input = GetComponent<PlayerInputReader>();
             motor = GetComponent<PlayerMotor>();
-            health = GetComponent<Health>();
-            mass = GetComponent<SlimeMass>();
-            if (aimCamera == null) aimCamera = GetComponentInChildren<Camera>();
+            size = GetComponent<PlayerSize>();
         }
 
         void Update()
         {
-            LookTarget = FindTarget();
+            Available = FindUnderFeet();
 
-            if (input.AbsorbHeld && LookTarget != null)
+            if (input.AbsorbHeld && Available != null)
             {
-                if (!ReferenceEquals(target, LookTarget))
+                if (!ReferenceEquals(target, Available))
                 {
                     Cancel();
-                    target = LookTarget;
+                    target = Available;
                     progress = 0f;
                     AbsorbStarted?.Invoke(target);
                 }
@@ -83,8 +78,7 @@ namespace SlimeHunter.Player
             target = null;
             progress = 0f;
             TotalAbsorbed++;
-            if (health != null) health.Heal(reward.Health);
-            if (mass != null) mass.Add(reward.Mass);
+            if (size != null) size.Grow(reward.SizeGain);
             Absorbed?.Invoke(reward, TotalAbsorbed);
         }
 
@@ -99,34 +93,23 @@ namespace SlimeHunter.Player
             progress = 0f;
         }
 
-        IAbsorbable FindTarget()
+        IAbsorbable FindUnderFeet()
         {
-            // 1) O que está na mira.
-            Ray ray = aimCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
-            int count = Physics.SphereCastNonAlloc(ray, probeRadius, CastHits, range, mask, QueryTriggerInteraction.Collide);
+            float scale = transform.lossyScale.y;
+            Vector3 center = transform.position + Vector3.up * (feetHeight * scale);
+            int count = Physics.OverlapSphereNonAlloc(center, feetRadius * scale, OverlapHits, mask, QueryTriggerInteraction.Collide);
+
             IAbsorbable best = null;
             float bestDist = float.MaxValue;
             for (int i = 0; i < count; i++)
             {
-                var a = Absorbable(CastHits[i].collider);
-                if (a != null && CastHits[i].distance < bestDist)
-                {
-                    best = a;
-                    bestDist = CastHits[i].distance;
-                }
-            }
-            if (best != null) return best;
+                Collider col = OverlapHits[i];
+                if (col.transform.IsChildOf(transform)) continue;
+                var a = col.GetComponentInParent<IAbsorbable>();
+                if (a == null || !a.CanBeAbsorbed) continue;
 
-            // 2) Poça perto, na frente do jogador (um slime pequeno não precisa olhar pro chão).
-            Vector3 forward = Vector3.ProjectOnPlane(aimCamera.transform.forward, Vector3.up).normalized;
-            count = Physics.OverlapSphereNonAlloc(transform.position, range, OverlapHits, mask, QueryTriggerInteraction.Collide);
-            for (int i = 0; i < count; i++)
-            {
-                var a = Absorbable(OverlapHits[i]);
-                if (a == null) continue;
-                Vector3 to = OverlapHits[i].bounds.center - transform.position;
+                Vector3 to = col.bounds.center - transform.position;
                 to.y = 0f;
-                if (to.sqrMagnitude > 0.01f && Vector3.Angle(forward, to) > proximityAngle) continue;
                 if (to.sqrMagnitude < bestDist)
                 {
                     best = a;
@@ -136,13 +119,13 @@ namespace SlimeHunter.Player
             return best;
         }
 
-        IAbsorbable Absorbable(Collider col)
-        {
-            if (col.transform.IsChildOf(transform)) return null;
-            var a = col.GetComponentInParent<IAbsorbable>();
-            return a != null && a.CanBeAbsorbed ? a : null;
-        }
-
         static bool IsAlive(IAbsorbable a) => a is UnityEngine.Object o && o != null;
+
+        void OnDrawGizmosSelected()
+        {
+            float scale = transform.lossyScale.y;
+            Gizmos.color = new Color(0.4f, 1f, 0.5f, 0.5f);
+            Gizmos.DrawWireSphere(transform.position + Vector3.up * (feetHeight * scale), feetRadius * scale);
+        }
     }
 }

@@ -8,16 +8,17 @@ namespace SlimeHunter.Player
     /// Lê todos os controles do protagonista (teclado/mouse + gamepad).
     /// As ações são criadas em código para o player funcionar sem depender de asset externo.
     ///
-    /// Teclado/Mouse: WASD andar · Mouse olhar · Espaço pular/pulo duplo · Shift dash
-    ///                Clique esq. atirar · E ou clique dir. (segurar) absorver
-    ///                Ctrl ou C (no ar) impacto · F interagir · Esc soltar o mouse
-    /// Gamepad:       LS andar · RS olhar · A pular · B dash · RT atirar · LT absorver
+    /// Teclado/Mouse: WASD mover (saltinhos) · Mouse olhar · Espaço pular / pulo duplo no ar
+    ///                Shift dash · Clique esq. tiro rápido · Segurar e soltar: tiro carregado
+    ///                E ou clique dir. (segurar, em cima da poça) absorver
+    ///                Ctrl ou C (no ar) impacto · F interagir · Esc soltar o mouse · R recomeçar (Game Over)
+    /// Gamepad:       LS mover · RS olhar · A pular · B dash · RT atirar · LT absorver
     ///                RB impacto · X interagir · Start soltar
     /// </summary>
     [DefaultExecutionOrder(-100)]
     public class PlayerInputReader : MonoBehaviour
     {
-        InputAction move, lookMouse, lookStick, jump, dash, fire, absorb, slam, interact, cancel;
+        InputAction move, lookMouse, lookStick, jump, dash, fire, absorb, slam, interact, cancel, restart;
         bool gameplayEnabled = true;
 
         public Vector2 Move => gameplayEnabled ? Vector2.ClampMagnitude(move.ReadValue<Vector2>(), 1f) : Vector2.zero;
@@ -30,6 +31,9 @@ namespace SlimeHunter.Player
         public bool DashPressed => gameplayEnabled && dash.WasPressedThisFrame();
         public bool FireHeld => gameplayEnabled && fire.IsPressed();
         public bool FirePressed => fire.WasPressedThisFrame();
+        public bool FireReleased => fire.WasReleasedThisFrame();
+        /// <summary>Recomeçar depois do Game Over (funciona com o gameplay desligado).</summary>
+        public bool RestartPressed => restart.WasPressedThisFrame();
         public bool AbsorbHeld => gameplayEnabled && absorb.IsPressed();
         public bool SlamPressed => gameplayEnabled && slam.WasPressedThisFrame();
         public bool InteractPressed => gameplayEnabled && interact.WasPressedThisFrame();
@@ -57,6 +61,7 @@ namespace SlimeHunter.Player
             slam = Button("Slam", "<Keyboard>/leftCtrl", "<Keyboard>/c", "<Gamepad>/rightShoulder");
             interact = Button("Interact", "<Keyboard>/f", "<Gamepad>/buttonWest");
             cancel = Button("Cancel", "<Keyboard>/escape", "<Gamepad>/start");
+            restart = Button("Restart", "<Keyboard>/r", "<Keyboard>/enter", "<Gamepad>/buttonSouth");
         }
 
         static InputAction Button(string name, params string[] bindings)
@@ -70,7 +75,7 @@ namespace SlimeHunter.Player
         {
             yield return move; yield return lookMouse; yield return lookStick; yield return jump;
             yield return dash; yield return fire; yield return absorb; yield return slam;
-            yield return interact; yield return cancel;
+            yield return interact; yield return cancel; yield return restart;
         }
 
         void OnEnable() { foreach (var a in All()) a.Enable(); }

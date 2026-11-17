@@ -1,11 +1,11 @@
 using System.Text;
-using SlimeHunter.Core;
 using UnityEngine;
 
 namespace SlimeHunter.Player
 {
     /// <summary>
-    /// HUD de protótipo (IMGUI): mira, vida, gosma, dash, absorção, prompts e itens.
+    /// HUD de protótipo (IMGUI): mira, barras de tamanho (= vida), vidas, dash, carga do tiro,
+    /// absorção, prompts, itens e Game Over.
     /// Trocar por uma UI definitiva (UI Toolkit/uGUI) quando a direção de arte estiver pronta.
     /// </summary>
     public class PlayerHUD : MonoBehaviour
@@ -13,9 +13,9 @@ namespace SlimeHunter.Player
         [SerializeField] bool showHud = true;
         [SerializeField] bool showControls = true;
 
-        Health health;
-        SlimeMass mass;
+        PlayerSize size;
         PlayerMotor motor;
+        PlayerShooter shooter;
         PlayerAbsorb absorb;
         PlayerInteractor interactor;
         PlayerInventory inventory;
@@ -23,18 +23,22 @@ namespace SlimeHunter.Player
 
         GUIStyle label;
         GUIStyle centerLabel;
+        GUIStyle bigLabel;
+        GUIStyle smallLabel;
         readonly StringBuilder sb = new StringBuilder();
 
-        static readonly Color HealthColor = new Color(0.95f, 0.3f, 0.35f);
-        static readonly Color MassColor = new Color(0.35f, 0.95f, 0.45f);
-        static readonly Color DashColor = new Color(0.4f, 0.75f, 1f);
+        static readonly Color SizeColor = new Color(0.45f, 0.85f, 1f);
+        static readonly Color GrowColor = new Color(0.35f, 0.95f, 0.5f);
+        static readonly Color LifeColor = new Color(0.95f, 0.35f, 0.45f);
+        static readonly Color DashColor = new Color(0.75f, 0.6f, 1f);
+        static readonly Color ChargeColor = new Color(1f, 0.8f, 0.25f);
         static readonly Color BackColor = new Color(0f, 0f, 0f, 0.55f);
 
         void Awake()
         {
-            health = GetComponent<Health>();
-            mass = GetComponent<SlimeMass>();
+            size = GetComponent<PlayerSize>();
             motor = GetComponent<PlayerMotor>();
+            shooter = GetComponent<PlayerShooter>();
             absorb = GetComponent<PlayerAbsorb>();
             interactor = GetComponent<PlayerInteractor>();
             inventory = GetComponent<PlayerInventory>();
@@ -44,32 +48,43 @@ namespace SlimeHunter.Player
         void OnGUI()
         {
             if (!showHud) return;
-            if (label == null)
-            {
-                label = new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold };
-                label.normal.textColor = Color.white;
-                centerLabel = new GUIStyle(label) { alignment = TextAnchor.MiddleCenter, fontSize = 18 };
-            }
+            EnsureStyles();
 
             float w = Screen.width, h = Screen.height;
             Vector2 c = new Vector2(w * 0.5f, h * 0.5f);
 
-            // Mira (fica verde quando dá pra absorver algo)
-            bool canAbsorb = absorb != null && absorb.LookTarget != null;
-            Rect(new Rect(c.x - 3, c.y - 3, 6, 6), canAbsorb ? MassColor : Color.white);
+            if (controller != null && controller.IsGameOver)
+            {
+                Fill(new Rect(0, 0, w, h), new Color(0f, 0f, 0f, 0.7f));
+                GUI.Label(new Rect(0, c.y - 60, w, 60), "GAME OVER", bigLabel);
+                GUI.Label(new Rect(0, c.y + 10, w, 30), "Glunb... (R ou Enter para recomeçar)", centerLabel);
+                return;
+            }
 
-            // Barras
-            float x = 24, y = h - 90, bw = 260;
-            if (health != null) Bar(new Rect(x, y, bw, 18), health.Normalized, HealthColor, $"Vida {Mathf.CeilToInt(health.Current)}");
-            if (mass != null) Bar(new Rect(x, y + 24, bw, 18), mass.Normalized, MassColor, $"Gosma {Mathf.FloorToInt(mass.Current)}");
-            if (motor != null) Bar(new Rect(x, y + 48, bw * 0.5f, 10), motor.DashReady01, DashColor, null);
+            // Mira (fica verde quando dá pra absorver algo)
+            bool canAbsorb = absorb != null && absorb.Available != null;
+            Fill(new Rect(c.x - 3, c.y - 3, 6, 6), canAbsorb ? GrowColor : Color.white);
+
+            DrawSize(new Vector2(24, h - 70));
+            DrawLives(new Vector2(24, h - 118));
+            if (motor != null) Bar(new Rect(24, h - 30, 120, 8), motor.DashReady01, DashColor);
+
+            // Carga do tiro
+            if (shooter != null && shooter.IsCharging)
+            {
+                bool full = shooter.Charge01 >= 1f;
+                Color col = !shooter.CanAffordCharged ? Color.gray : full ? GrowColor : ChargeColor;
+                Bar(new Rect(c.x - 60, c.y + 22, 120, 8), shooter.Charge01, col);
+                if (!shooter.CanAffordCharged)
+                    GUI.Label(new Rect(c.x - 150, c.y + 32, 300, 24), "Pequeno demais para o tiro carregado", centerLabel);
+            }
 
             // Absorção
             if (absorb != null)
             {
                 if (absorb.IsAbsorbing)
                 {
-                    Bar(new Rect(c.x - 100, c.y + 40, 200, 14), absorb.Progress01, MassColor, null);
+                    Bar(new Rect(c.x - 100, c.y + 40, 200, 14), absorb.Progress01, GrowColor);
                     GUI.Label(new Rect(c.x - 150, c.y + 58, 300, 30), "Glunb... glunb...", centerLabel);
                 }
                 else if (canAbsorb)
@@ -96,21 +111,67 @@ namespace SlimeHunter.Player
                 GUI.Label(new Rect(w - 280, 20, 260, 200), sb.ToString(), label);
             }
 
-            if (controller != null && controller.IsDead)
-                GUI.Label(new Rect(0, c.y - 60, w, 40), "BLORP... (renascendo)", centerLabel);
+            if (controller != null && controller.IsRecovering)
+                GUI.Label(new Rect(0, c.y - 60, w, 40), "BLORP! Perdeu uma vida", centerLabel);
 
             if (showControls)
             {
-                GUI.Label(new Rect(24, 48, 700, 26),
-                    "WASD andar · Espaço pular (2x) · Shift dash · Clique atirar · E absorver · Ctrl/C impacto (no ar) · F interagir · Esc mouse",
-                    new GUIStyle(label) { fontSize = 12, fontStyle = FontStyle.Normal });
+                GUI.Label(new Rect(24, 48, 900, 22),
+                    "WASD mover (saltinhos) · Espaço pular (2x no ar) · Shift dash (atravessa barreiras) · Clique tiro rápido · Segure/solte tiro carregado",
+                    smallLabel);
+                GUI.Label(new Rect(24, 66, 900, 22),
+                    "E (em cima da poça) absorver · Ctrl/C impacto (no ar) · F interagir · Esc soltar o mouse",
+                    smallLabel);
             }
 
-            if (Cursor.lockState != CursorLockMode.Locked)
+            if (Cursor.lockState != CursorLockMode.Locked && (controller == null || !controller.IsGameOver))
                 GUI.Label(new Rect(0, c.y - 20, w, 40), "Clique para jogar", centerLabel);
         }
 
-        static void Rect(Rect r, Color color)
+        void DrawSize(Vector2 pos)
+        {
+            if (size == null) return;
+            int bars = Mathf.CeilToInt(size.Max);
+            const float bw = 46f, bh = 18f, gap = 4f;
+            for (int i = 0; i < bars; i++)
+            {
+                var r = new Rect(pos.x + i * (bw + gap), pos.y, bw, bh);
+                float fill = Mathf.Clamp01(size.Current - i);
+                // Barras acima do tamanho inicial = crescimento extra (cor diferente).
+                Bar(r, fill, i < size.Start ? SizeColor : GrowColor);
+            }
+            sb.Clear();
+            sb.Append("Tamanho ").Append(size.Current.ToString("0.0"));
+            if (motor != null)
+                sb.Append("   ·   Velocidade x").Append(motor.SizeSpeed.ToString("0.00"))
+                  .Append("   ·   Impacto x").Append(motor.SizeSlamPower.ToString("0.00"));
+            if (shooter != null)
+                sb.Append("   ·   Tiro x").Append(shooter.ShotPace.ToString("0.00"))
+                  .Append("   ·   Bolas (carregado) ").Append(shooter.ChargedPellets);
+            GUI.Label(new Rect(pos.x, pos.y - 22, 600, 22), sb.ToString(), smallLabel);
+        }
+
+        void DrawLives(Vector2 pos)
+        {
+            if (controller == null) return;
+            for (int i = 0; i < controller.MaxLives; i++)
+            {
+                var r = new Rect(pos.x + i * 22f, pos.y, 16f, 16f);
+                Fill(r, i < controller.Lives ? LifeColor : BackColor);
+            }
+        }
+
+        void EnsureStyles()
+        {
+            if (label != null) return;
+            label = new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold };
+            label.normal.textColor = Color.white;
+            centerLabel = new GUIStyle(label) { alignment = TextAnchor.MiddleCenter, fontSize = 18 };
+            bigLabel = new GUIStyle(centerLabel) { fontSize = 56 };
+            smallLabel = new GUIStyle(label) { fontSize = 12, fontStyle = FontStyle.Normal };
+        }
+
+        static void Fill(Rect r, Color color)
         {
             Color old = GUI.color;
             GUI.color = color;
@@ -118,12 +179,10 @@ namespace SlimeHunter.Player
             GUI.color = old;
         }
 
-        void Bar(Rect r, float value01, Color color, string text)
+        static void Bar(Rect r, float value01, Color color)
         {
-            Rect(r, BackColor);
-            Rect(new Rect(r.x + 2, r.y + 2, (r.width - 4) * Mathf.Clamp01(value01), r.height - 4), color);
-            if (!string.IsNullOrEmpty(text))
-                GUI.Label(new Rect(r.x + 6, r.y - 3, r.width, r.height + 6), text, new GUIStyle(label) { fontSize = 13 });
+            Fill(r, BackColor);
+            Fill(new Rect(r.x + 2, r.y + 2, (r.width - 4) * Mathf.Clamp01(value01), r.height - 4), color);
         }
     }
 }

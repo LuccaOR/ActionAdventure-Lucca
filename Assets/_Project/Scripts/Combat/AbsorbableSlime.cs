@@ -13,8 +13,8 @@ namespace SlimeHunter.Combat
     {
         [Header("Absorção")]
         [SerializeField] float absorbDuration = 1.2f;
-        [SerializeField] float healthReward = 20f;
-        [SerializeField] float massReward = 30f;
+        [Tooltip("Barras de tamanho que o protagonista ganha ao absorver.")]
+        [SerializeField] float sizeReward = 1f;
 
         [Header("Poça (morte)")]
         [SerializeField] Vector3 puddleScaleMultiplier = new Vector3(1.5f, 0.2f, 1.5f);
@@ -123,7 +123,7 @@ namespace SlimeHunter.Combat
         {
             absorbed = true;
             Destroy(gameObject);
-            return new AbsorbReward(healthReward, massReward);
+            return new AbsorbReward(sizeReward);
         }
     }
 }

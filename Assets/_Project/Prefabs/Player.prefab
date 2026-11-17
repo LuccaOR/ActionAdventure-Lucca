@@ -257,8 +257,7 @@ GameObject:
   - component: {fileID: 6041354936269834373}
   - component: {fileID: 3840315126489263297}
   - component: {fileID: 5867216926149447357}
-  - component: {fileID: 3908146512782143790}
-  - component: {fileID: 2703189641305355075}
+  - component: {fileID: 9114826081144443646}
   - component: {fileID: 5215061138818220189}
   - component: {fileID: 2146662843995659754}
   - component: {fileID: 1764551620760926563}
@@ -267,7 +266,7 @@ GameObject:
   - component: {fileID: 5868177772364152536}
   - component: {fileID: 2337883491877135355}
   - component: {fileID: 2158247121937211978}
-  m_Layer: 0
+  m_Layer: 8
   m_Name: Player
   m_TagString: Player
   m_Icon: {fileID: 0}
@@ -328,7 +327,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bbcb29474e79eaf4f80b6e35747d7386, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SlimeHunter.Player.PlayerInputReader
---- !u!114 &3908146512782143790
+--- !u!114 &9114826081144443646
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -337,26 +336,16 @@ MonoBehaviour:
   m_GameObject: {fileID: 7939898703547463228}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 60836de380d53334995040058c497a22, type: 3}
+  m_Script: {fileID: 11500000, guid: f289a37db02cbe347807db93424b2825, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SlimeHunter.Core.Health
-  maxHealth: 100
+  m_EditorClassIdentifier: Assembly-CSharp::SlimeHunter.Player.PlayerSize
+  startSize: 3
+  maxSize: 5
+  damagePerBar: 20
   invulnerabilityAfterHit: 0.6
---- !u!114 &2703189641305355075
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7939898703547463228}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 78483feec4e36ef46b20e60234c4eef9, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SlimeHunter.Player.SlimeMass
-  maxMass: 100
-  regenPerSecond: 6
-  regenDelay: 1.2
+  minScale: 0.45
+  maxScale: 1.5
+  scaleLerpSpeed: 8
 --- !u!114 &5215061138818220189
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -369,7 +358,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bf9b76c7575f76c4299d29e405f36014, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SlimeHunter.Player.PlayerMotor
-  moveSpeed: 7
+  moveSpeed: 6
+  hopHeight: 0.35
+  hopGroundTime: 0.04
   groundAcceleration: 70
   groundDeceleration: 90
   airAcceleration: 25
@@ -387,13 +378,18 @@ MonoBehaviour:
   dashCooldown: 0.55
   maxAirDashes: 1
   dashGrantsInvulnerability: 1
+  dashPassThroughMask:
+    serializedVersion: 2
+    m_Bits: 1536
+  dashMaxOverrun: 0.3
   slamSpeed: 40
   slamMinAirTime: 0.15
   slamRadius: 4
   slamBaseDamage: 25
   slamDamagePerMeter: 3
   slamMaxDamage: 80
-  slamKnockback: 10
+  slamKnockback: 12
+  slamKnockbackUp: 4
   slamBounceHeight: 0.6
   slamHitMask:
     serializedVersion: 2
@@ -438,14 +434,22 @@ MonoBehaviour:
   projectilePrefab: {fileID: 8683861627023497907, guid: 87ce24a92b956b0499aae9f01b90e35a, type: 3}
   muzzle: {fileID: 4529690050897112946}
   aimCamera: {fileID: 7862895063391370659}
-  fireRate: 5
-  projectileSpeed: 40
-  damage: 12
-  massCost: 4
   maxAimDistance: 150
   aimMask:
     serializedVersion: 2
     m_Bits: 4294967295
+  quickDamage: 12
+  quickSpeed: 40
+  shotsPerBar: 6
+  quickMinInterval: 0.12
+  chargeTime: 0.6
+  chargeDisplayDelay: 0.15
+  chargedCostBars: 1
+  pelletCount: 8
+  spreadAngle: 9
+  pelletDamage: 9
+  pelletSpeed: 35
+  pelletScale: 0.75
 --- !u!114 &5880805371561090503
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -458,10 +462,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3dd87ab396b286b47944920d411b8808, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SlimeHunter.Player.PlayerAbsorb
-  aimCamera: {fileID: 7862895063391370659}
-  range: 3.5
-  probeRadius: 0.5
-  proximityAngle: 60
+  feetRadius: 0.55
+  feetHeight: 0.15
   mask:
     serializedVersion: 2
     m_Bits: 4294967295
@@ -507,7 +509,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 598a78756e7a5f143b00b0f374ef490e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SlimeHunter.Player.PlayerController
-  respawnDelay: 1.5
+  maxLives: 3
+  lifeLostDelay: 0.6
+  respawnDelay: 1.2
+  invulnerabilityAfterLifeLost: 2
   killHeight: -30
 --- !u!114 &2158247121937211978
 MonoBehaviour:

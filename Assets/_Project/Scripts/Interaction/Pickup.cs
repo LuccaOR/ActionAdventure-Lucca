@@ -1,22 +1,21 @@
-using SlimeHunter.Core;
 using SlimeHunter.Player;
 using UnityEngine;
 
 namespace SlimeHunter.Interaction
 {
-    /// <summary>Item coletável ao encostar: chave de puzzle, vida ou gosma.</summary>
+    /// <summary>Item coletável ao encostar: item de puzzle (chave...) ou gosma que recupera tamanho.</summary>
     [RequireComponent(typeof(Collider))]
     public class Pickup : MonoBehaviour
     {
-        public enum Kind { PuzzleItem, Health, Mass }
+        public enum Kind { PuzzleItem, Size }
 
         [SerializeField] Kind kind = Kind.PuzzleItem;
         [Tooltip("Id usado pelas portas/mecanismos, ex.: chave_dourada")]
         [SerializeField] string itemId = "chave_dourada";
         [SerializeField] string displayName = "Chave Dourada";
         [SerializeField] int amount = 1;
-        [Tooltip("Vida/gosma recuperada (para Kind Health/Mass).")]
-        [SerializeField] float restoreAmount = 25f;
+        [Tooltip("Barras de tamanho recuperadas (Kind = Size).")]
+        [SerializeField] float sizeAmount = 1f;
 
         [Header("Visual")]
         [SerializeField] float spinSpeed = 90f;
@@ -47,15 +46,10 @@ namespace SlimeHunter.Interaction
                     if (inv == null) return;
                     inv.Add(itemId, amount, displayName);
                     break;
-                case Kind.Health:
-                    var h = player.GetComponent<Health>();
-                    if (h == null || h.Current >= h.Max) return;
-                    h.Heal(restoreAmount);
-                    break;
-                case Kind.Mass:
-                    var m = player.GetComponent<SlimeMass>();
-                    if (m == null || m.Current >= m.Max) return;
-                    m.Add(restoreAmount);
+                case Kind.Size:
+                    var s = player.GetComponent<PlayerSize>();
+                    if (s == null || s.Current >= s.Max) return;
+                    s.Grow(sizeAmount);
                     break;
             }
 

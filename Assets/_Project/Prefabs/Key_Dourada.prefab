@@ -129,7 +129,7 @@ MonoBehaviour:
   itemId: chave_dourada
   displayName: Chave Dourada
   amount: 1
-  restoreAmount: 25
+  sizeAmount: 1
   spinSpeed: 90
   bobHeight: 0.15
   bobSpeed: 2

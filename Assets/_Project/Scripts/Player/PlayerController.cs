@@ -1,46 +1,66 @@
+using System;
 using System.Collections;
-using SlimeHunter.Core;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace SlimeHunter.Player
 {
     /// <summary>
-    /// Ponto central do protagonista: morte, respawn no checkpoint e queda para fora do mapa.
-    /// Os outros componentes (motor, tiro, absorção...) funcionam sozinhos.
+    /// Vidas do protagonista: quando o tamanho zera (ou cai do mapa), perde uma vida
+    /// e volta ao tamanho inicial. Sem vidas = Game Over (R/Enter recomeça a fase).
     /// </summary>
     [RequireComponent(typeof(PlayerMotor))]
-    [RequireComponent(typeof(Health))]
+    [RequireComponent(typeof(PlayerSize))]
     public class PlayerController : MonoBehaviour
     {
-        [SerializeField] float respawnDelay = 1.5f;
-        [Tooltip("Abaixo dessa altura o slime morre (caiu do mapa).")]
+        [SerializeField, Min(1)] int maxLives = 3;
+        [Tooltip("Pausa ao perder uma vida antes de voltar ao tamanho inicial.")]
+        [SerializeField] float lifeLostDelay = 0.6f;
+        [Tooltip("Pausa ao cair do mapa antes de voltar no checkpoint.")]
+        [SerializeField] float respawnDelay = 1.2f;
+        [SerializeField] float invulnerabilityAfterLifeLost = 2f;
+        [Tooltip("Abaixo dessa altura o slime perde uma vida (caiu do mapa).")]
         [SerializeField] float killHeight = -30f;
 
         PlayerMotor motor;
         PlayerInputReader input;
-        Health health;
-        SlimeMass mass;
+        PlayerSize size;
+        PlayerLook look;
 
         Vector3 checkpointPosition;
         Quaternion checkpointRotation;
 
-        public bool IsDead { get; private set; }
+        public int Lives { get; private set; }
+        public int MaxLives => maxLives;
+        public bool IsRecovering { get; private set; }
+        public bool IsGameOver { get; private set; }
+
+        /// <summary>Vidas restantes.</summary>
+        public event Action<int> LifeLost;
+        public event Action GameOver;
 
         void Awake()
         {
             motor = GetComponent<PlayerMotor>();
             input = GetComponent<PlayerInputReader>();
-            health = GetComponent<Health>();
-            mass = GetComponent<SlimeMass>();
+            size = GetComponent<PlayerSize>();
+            look = GetComponent<PlayerLook>();
+            Lives = maxLives;
             SetCheckpoint(transform.position, transform.rotation);
         }
 
-        void OnEnable() => health.Died += OnDied;
-        void OnDisable() => health.Died -= OnDied;
+        void OnEnable() => size.Depleted += OnSizeDepleted;
+        void OnDisable() => size.Depleted -= OnSizeDepleted;
 
         void Update()
         {
-            if (!IsDead && transform.position.y < killHeight) health.Kill();
+            if (IsGameOver)
+            {
+                if (input.RestartPressed) Restart();
+                return;
+            }
+
+            if (!IsRecovering && transform.position.y < killHeight) LoseLife(true);
         }
 
         public void SetCheckpoint(Vector3 position, Quaternion rotation)
@@ -49,22 +69,45 @@ namespace SlimeHunter.Player
             checkpointRotation = rotation;
         }
 
-        void OnDied()
+        void OnSizeDepleted() => LoseLife(false);
+
+        void LoseLife(bool backToCheckpoint)
         {
-            if (IsDead) return;
-            IsDead = true;
-            input.SetGameplayEnabled(false);
-            StartCoroutine(RespawnRoutine());
+            if (IsRecovering || IsGameOver) return;
+
+            Lives = Mathf.Max(0, Lives - 1);
+            LifeLost?.Invoke(Lives);
+
+            if (Lives <= 0)
+            {
+                IsGameOver = true;
+                input.SetGameplayEnabled(false);
+                if (look != null) look.SetCursorLocked(false);
+                GameOver?.Invoke();
+                return;
+            }
+
+            StartCoroutine(RecoverRoutine(backToCheckpoint));
         }
 
-        IEnumerator RespawnRoutine()
+        IEnumerator RecoverRoutine(bool backToCheckpoint)
         {
-            yield return new WaitForSeconds(respawnDelay);
-            motor.Teleport(checkpointPosition, checkpointRotation);
-            health.ResetToFull();
-            if (mass != null) mass.ResetToFull();
+            IsRecovering = true;
+            input.SetGameplayEnabled(false);
+            yield return new WaitForSeconds(backToCheckpoint ? respawnDelay : lifeLostDelay);
+
+            if (backToCheckpoint) motor.Teleport(checkpointPosition, checkpointRotation);
+            size.ResetToStart();
+            size.SetInvulnerableFor(invulnerabilityAfterLifeLost);
             input.SetGameplayEnabled(true);
-            IsDead = false;
+            IsRecovering = false;
+        }
+
+        void Restart()
+        {
+            Scene scene = SceneManager.GetActiveScene();
+            if (scene.buildIndex >= 0) SceneManager.LoadScene(scene.buildIndex);
+            else SceneManager.LoadScene(scene.name);
         }
     }
 }

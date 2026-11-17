@@ -23,6 +23,10 @@ namespace SlimeHunter.EditorTools
         const string SceneDir = Root + "/Scenes";
         const string ScenePath = SceneDir + "/PlayerTestbed.unity";
 
+        const string PlayerLayer = "Player";
+        const string EnemyLayer = "Enemy";
+        const string BarrierLayer = "DashBarrier";
+
         [MenuItem("Slime Hunter/Gerar Player + Cena de Teste")]
         public static void BuildAll()
         {
@@ -41,10 +45,15 @@ namespace SlimeHunter.EditorTools
             var enemyMat = Mat("M_EnemySlime", new Color(0.7f, 0.95f, 0.3f));
             var keyMat = Mat("M_Key", new Color(1f, 0.82f, 0.2f));
 
+            EnsureLayer(PlayerLayer);
+            EnsureLayer(EnemyLayer);
+            EnsureLayer(BarrierLayer);
+
             var projectile = CreateProjectilePrefab(gooMat);
             CreatePlayerPrefab(projectile, playerMat);
             CreateTrainingSlimePrefab(enemyMat);
             CreateKeyPrefab(keyMat);
+            CreateGooOrbPrefab(gooMat);
             AssetDatabase.SaveAssets();
             Debug.Log("[Slime Hunter] Prefabs gerados em " + PrefabDir);
         }
@@ -68,6 +77,7 @@ namespace SlimeHunter.EditorTools
         {
             var root = new GameObject("Player");
             root.tag = "Player";
+            root.layer = LayerMask.NameToLayer(PlayerLayer);
 
             var cc = root.AddComponent<CharacterController>();
             cc.height = 1.0f;
@@ -105,10 +115,9 @@ namespace SlimeHunter.EditorTools
             muzzle.localPosition = new Vector3(0.18f, -0.15f, 0.5f);
 
             root.AddComponent<PlayerInputReader>();
-            var health = root.AddComponent<Health>();
-            SetFloat(health, "invulnerabilityAfterHit", 0.6f);
-            root.AddComponent<SlimeMass>();
-            root.AddComponent<PlayerMotor>();
+            root.AddComponent<PlayerSize>();
+            var motor = root.AddComponent<PlayerMotor>();
+            SetInt(motor, "dashPassThroughMask", LayerMask.GetMask(EnemyLayer, BarrierLayer));
             var look = root.AddComponent<PlayerLook>();
             SetRef(look, "cameraPivot", pivot);
             SetRef(look, "playerCamera", cam);
@@ -116,7 +125,7 @@ namespace SlimeHunter.EditorTools
             SetRef(shooter, "projectilePrefab", projectile);
             SetRef(shooter, "muzzle", muzzle);
             SetRef(shooter, "aimCamera", cam);
-            SetRef(root.AddComponent<PlayerAbsorb>(), "aimCamera", cam);
+            root.AddComponent<PlayerAbsorb>();
             SetRef(root.AddComponent<PlayerInteractor>(), "aimCamera", cam);
             root.AddComponent<PlayerInventory>();
             root.AddComponent<PlayerController>();
@@ -130,10 +139,31 @@ namespace SlimeHunter.EditorTools
             var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             go.name = "TrainingSlime";
             go.transform.localScale = new Vector3(1.2f, 0.9f, 1.2f);
+            go.layer = LayerMask.NameToLayer(EnemyLayer);
             go.GetComponent<MeshRenderer>().sharedMaterial = mat;
+            var rb = go.AddComponent<Rigidbody>();
+            rb.mass = 1f;
+            rb.freezeRotation = true;
+            rb.interpolation = RigidbodyInterpolation.Interpolate;
             SetFloat(go.AddComponent<Health>(), "maxHealth", 30f);
             go.AddComponent<AbsorbableSlime>();
             return Save(go, "TrainingSlime");
+        }
+
+        static GameObject CreateGooOrbPrefab(Material mat)
+        {
+            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            go.name = "GooOrb";
+            go.transform.localScale = Vector3.one * 0.5f;
+            go.GetComponent<MeshRenderer>().sharedMaterial = mat;
+            go.GetComponent<SphereCollider>().isTrigger = true;
+            var pickup = go.AddComponent<Pickup>();
+            var so = new SerializedObject(pickup);
+            so.FindProperty("kind").enumValueIndex = (int)Pickup.Kind.Size;
+            so.FindProperty("itemId").stringValue = "gosma";
+            so.FindProperty("displayName").stringValue = "Gosma";
+            so.ApplyModifiedPropertiesWithoutUndo();
+            return Save(go, "GooOrb");
         }
 
         static GameObject CreateKeyPrefab(Material mat)
@@ -200,9 +230,24 @@ namespace SlimeHunter.EditorTools
             // Chave em cima da plataforma alta
             Inst(key, new Vector3(0, 7.5f, 20));
 
+            // Jaula com barreira de gosma: só entra atravessando com o dash
+            var barrierMat = Mat("M_DashBarrier", new Color(0.75f, 0.35f, 1f));
+            Box("Cage_Back", env, new Vector3(14, 2, -9), new Vector3(10, 4, 0.5f), platMat);
+            Box("Cage_Left", env, new Vector3(9, 2, -6.5f), new Vector3(0.5f, 4, 5), platMat);
+            Box("Cage_Right", env, new Vector3(19, 2, -6.5f), new Vector3(0.5f, 4, 5), platMat);
+            Box("Cage_FrontL", env, new Vector3(11, 2, -4), new Vector3(4, 4, 0.5f), platMat);
+            Box("Cage_FrontR", env, new Vector3(17, 2, -4), new Vector3(4, 4, 0.5f), platMat);
+            Box("Cage_Roof", env, new Vector3(14, 4.25f, -6.5f), new Vector3(10.5f, 0.5f, 5.5f), platMat);
+            var barrier = Box("DashBarrier", env, new Vector3(14, 1.5f, -4), new Vector3(2, 3, 0.4f), barrierMat);
+            barrier.layer = LayerMask.NameToLayer(BarrierLayer);
+            var gooOrb = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabDir + "/GooOrb.prefab");
+            Inst(gooOrb, new Vector3(14, 0.6f, -7));
+            Inst(gooOrb, new Vector3(16, 0.6f, -7));
+            Inst(gooOrb, new Vector3(-4, 0.6f, 3));
+
             // Slimes de treino
             var enemies = new GameObject("TrainingSlimes").transform;
-            Vector3[] spots = { new Vector3(-4, 0.45f, 8), new Vector3(-2, 0.45f, 10), new Vector3(-6, 0.45f, 11), new Vector3(10, 0.45f, -2), new Vector3(0, 0.45f, -15) };
+            Vector3[] spots = { new Vector3(-4, 0.45f, 8), new Vector3(-2, 0.45f, 10), new Vector3(-6, 0.45f, 11), new Vector3(10, 0.45f, -1), new Vector3(0, 0.45f, -15), new Vector3(11.5f, 0.45f, -7) };
             foreach (var s in spots) Inst(slime, s).transform.SetParent(enemies, true);
 
             // Checkpoint
@@ -270,6 +315,32 @@ namespace SlimeHunter.EditorTools
             var so = new SerializedObject(target);
             so.FindProperty(field).objectReferenceValue = value;
             so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        static void SetInt(Object target, string field, int value)
+        {
+            var so = new SerializedObject(target);
+            so.FindProperty(field).intValue = value;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        /// <summary>Cria a camada (User Layer) se ainda não existir.</summary>
+        static int EnsureLayer(string name)
+        {
+            int existing = LayerMask.NameToLayer(name);
+            if (existing >= 0) return existing;
+
+            var tagManager = new SerializedObject(AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/TagManager.asset")[0]);
+            var layers = tagManager.FindProperty("layers");
+            for (int i = 8; i < layers.arraySize; i++)
+            {
+                var p = layers.GetArrayElementAtIndex(i);
+                if (!string.IsNullOrEmpty(p.stringValue)) continue;
+                p.stringValue = name;
+                tagManager.ApplyModifiedPropertiesWithoutUndo();
+                return i;
+            }
+            throw new System.InvalidOperationException("Sem espaço para criar a camada " + name);
         }
 
         static void SetFloat(Object target, string field, float value)
