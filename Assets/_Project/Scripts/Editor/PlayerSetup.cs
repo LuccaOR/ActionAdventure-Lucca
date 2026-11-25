@@ -1,6 +1,7 @@
 using System.IO;
 using SlimeHunter.Combat;
 using SlimeHunter.Core;
+using SlimeHunter.Enemies;
 using SlimeHunter.Interaction;
 using SlimeHunter.Player;
 using UnityEditor;
@@ -19,7 +20,7 @@ namespace SlimeHunter.EditorTools
     {
         const string Root = "Assets/_Project";
         const string MatDir = Root + "/Materials";
-        const string PrefabDir = Root + "/Prefabs";
+        internal const string PrefabDir = Root + "/Prefabs";
         const string SceneDir = Root + "/Scenes";
         const string ScenePath = SceneDir + "/PlayerTestbed.unity";
 
@@ -54,6 +55,9 @@ namespace SlimeHunter.EditorTools
             CreateTrainingSlimePrefab(enemyMat);
             CreateKeyPrefab(keyMat);
             CreateGooOrbPrefab(gooMat);
+            CreateMeleeSlimePrefab(Mat("M_MeleeSlime", new Color(1f, 0.55f, 0.2f)));
+            var enemyGoo = CreateEnemyProjectilePrefab(Mat("M_EnemyGoo", new Color(0.75f, 1f, 0.2f)));
+            CreateRangedSlimePrefab(Mat("M_RangedSlime", new Color(0.25f, 0.75f, 0.7f)), enemyGoo);
             AssetDatabase.SaveAssets();
             Debug.Log("[Slime Hunter] Prefabs gerados em " + PrefabDir);
         }
@@ -150,6 +154,112 @@ namespace SlimeHunter.EditorTools
             return Save(go, "TrainingSlime");
         }
 
+        /// <summary>Corpo comum dos slimes inimigos: collider no root, corpo visual com olhos, Rigidbody, Health e poça.</summary>
+        static (GameObject root, Transform body) CreateEnemySlimeBase(string name, Material mat, Vector3 bodyScale, float maxHealth)
+        {
+            int enemyLayer = LayerMask.NameToLayer(EnemyLayer);
+
+            var root = new GameObject(name);
+            root.layer = enemyLayer;
+            var col = root.AddComponent<SphereCollider>();
+            col.radius = 0.45f;
+
+            // Corpo visual separado do collider: o squash & stretch não mexe na física.
+            var body = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            body.name = "Body";
+            body.layer = enemyLayer;
+            Object.DestroyImmediate(body.GetComponent<Collider>());
+            body.transform.SetParent(root.transform, false);
+            body.transform.localScale = bodyScale;
+            body.GetComponent<MeshRenderer>().sharedMaterial = mat;
+
+            // Olhinhos para dar direção/identidade.
+            var eyeMat = Mat("M_SlimeEye", new Color(0.08f, 0.05f, 0.05f));
+            foreach (float x in new[] { -0.18f, 0.18f })
+            {
+                var eye = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                eye.name = "Eye";
+                eye.layer = enemyLayer;
+                Object.DestroyImmediate(eye.GetComponent<Collider>());
+                eye.transform.SetParent(body.transform, false);
+                eye.transform.localPosition = new Vector3(x, 0.12f, 0.45f);
+                eye.transform.localScale = new Vector3(0.12f, 0.18f, 0.08f);
+                eye.GetComponent<MeshRenderer>().sharedMaterial = eyeMat;
+            }
+
+            var rb = root.AddComponent<Rigidbody>();
+            rb.mass = 2f;
+            rb.freezeRotation = true;
+            rb.interpolation = RigidbodyInterpolation.Interpolate;
+            rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+
+            SetFloat(root.AddComponent<Health>(), "maxHealth", maxHealth);
+            return (root, body.transform);
+        }
+
+        /// <summary>Liga a IA ao corpo: referência ao corpo, visão e desligar a IA quando vira poça.</summary>
+        static void FinishEnemySlime(GameObject root, Transform body, SlimeEnemy ai, float sizeReward)
+        {
+            SetRef(ai, "body", body);
+            SetInt(ai, "sightMask", ~LayerMask.GetMask(EnemyLayer));
+
+            var absorb = root.AddComponent<AbsorbableSlime>();
+            var so = new SerializedObject(absorb);
+            var list = so.FindProperty("disableOnDeath");
+            list.arraySize = 1;
+            list.GetArrayElementAtIndex(0).objectReferenceValue = ai;
+            so.FindProperty("sizeReward").floatValue = sizeReward;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        static GameObject CreateMeleeSlimePrefab(Material mat)
+        {
+            var (root, body) = CreateEnemySlimeBase("MeleeSlime", mat, new Vector3(1.05f, 0.85f, 1.05f), 40f);
+            var melee = root.AddComponent<MeleeSlime>();
+            FinishEnemySlime(root, body, melee, 1.5f);
+            return Save(root, "MeleeSlime");
+        }
+
+        static SlimeProjectile CreateEnemyProjectilePrefab(Material mat)
+        {
+            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            go.name = "EnemyGooProjectile";
+            Object.DestroyImmediate(go.GetComponent<Collider>());
+            go.transform.localScale = Vector3.one * 0.4f;
+            var r = go.GetComponent<MeshRenderer>();
+            r.sharedMaterial = mat;
+            r.shadowCastingMode = ShadowCastingMode.Off;
+            var p = go.AddComponent<SlimeProjectile>();
+            // Gosma inimiga atravessa outros slimes (sem fogo amigo).
+            SetInt(p, "hitMask", ~LayerMask.GetMask(EnemyLayer));
+            return Save(go, "EnemyGooProjectile").GetComponent<SlimeProjectile>();
+        }
+
+        static GameObject CreateRangedSlimePrefab(Material mat, SlimeProjectile projectile)
+        {
+            var (root, body) = CreateEnemySlimeBase("RangedSlime", mat, new Vector3(0.95f, 0.95f, 0.95f), 25f);
+
+            // Boca: de onde sai a gosma.
+            var mouth = new GameObject("Mouth").transform;
+            mouth.SetParent(root.transform, false);
+            mouth.localPosition = new Vector3(0f, 0.05f, 0.6f);
+
+            var ranged = root.AddComponent<RangedSlime>();
+            SetRef(ranged, "projectilePrefab", projectile);
+            SetRef(ranged, "mouth", mouth);
+            var so = new SerializedObject(ranged);
+            so.FindProperty("windupTime").floatValue = 0.9f;      // incha devagar: dá pra ver chegando
+            so.FindProperty("attackCooldown").floatValue = 2.2f;
+            so.FindProperty("recoverTime").floatValue = 0.5f;
+            so.FindProperty("detectRange").floatValue = 16f;
+            so.FindProperty("telegraphScale").vector3Value = new Vector3(1.35f, 1.4f, 1.35f); // infla
+            so.FindProperty("telegraphColor").colorValue = new Color(0.8f, 1f, 0.25f);
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            FinishEnemySlime(root, body, ranged, 1f);
+            return Save(root, "RangedSlime");
+        }
+
         static GameObject CreateGooOrbPrefab(Material mat)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -175,7 +285,7 @@ namespace SlimeHunter.EditorTools
             Object.DestroyImmediate(go.GetComponent<Collider>());
             var trigger = go.AddComponent<SphereCollider>();
             trigger.isTrigger = true;
-            trigger.radius = 2f; // relativo à escala pequena
+            trigger.radius = 3f; // relativo à escala pequena (≈1.5 m: o slime pequeno também alcança a chave no pedestal)
             go.AddComponent<Pickup>();
             return Save(go, "Key_Dourada");
         }
@@ -250,6 +360,18 @@ namespace SlimeHunter.EditorTools
             Vector3[] spots = { new Vector3(-4, 0.45f, 8), new Vector3(-2, 0.45f, 10), new Vector3(-6, 0.45f, 11), new Vector3(10, 0.45f, -1), new Vector3(0, 0.45f, -15), new Vector3(11.5f, 0.45f, -7) };
             foreach (var s in spots) Inst(slime, s).transform.SetParent(enemies, true);
 
+            // Slimes melee numa clareira a nordeste (fora do alcance de visão do spawn)
+            var meleePrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabDir + "/MeleeSlime.prefab");
+            var melees = new GameObject("MeleeSlimes").transform;
+            Vector3[] meleeSpots = { new Vector3(18, 0.5f, 14), new Vector3(22, 0.5f, 18), new Vector3(16, 0.5f, 20) };
+            foreach (var s in meleeSpots) Inst(meleePrefab, s).transform.SetParent(melees, true);
+
+            // Slimes ranged a oeste: um em cima do pilar do dash (atira do alto) e dois no chão
+            var rangedPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabDir + "/RangedSlime.prefab");
+            var rangeds = new GameObject("RangedSlimes").transform;
+            Vector3[] rangedSpots = { new Vector3(-23, 3.5f, 6), new Vector3(-20, 0.5f, 18), new Vector3(-28, 0.5f, 13) };
+            foreach (var s in rangedSpots) Inst(rangedPrefab, s).transform.SetParent(rangeds, true);
+
             // Checkpoint
             var cp = Box("Checkpoint", env, new Vector3(0, 0.05f, 0), new Vector3(2, 0.1f, 2), checkMat);
             cp.GetComponent<Collider>().isTrigger = true;
@@ -258,6 +380,8 @@ namespace SlimeHunter.EditorTools
             var p = Inst(player, new Vector3(0, 0.1f, 0));
             p.name = "Player";
 
+            PuzzleSetup.BuildPuzzleLane();
+
             EditorSceneManager.SaveScene(scene, ScenePath);
             AddToBuildSettings(ScenePath);
             Debug.Log("[Slime Hunter] Cena de teste salva em " + ScenePath);
@@ -265,7 +389,7 @@ namespace SlimeHunter.EditorTools
 
         // ---------- Helpers ----------
 
-        static GameObject Box(string name, Transform parent, Vector3 pos, Vector3 size, Material mat)
+        internal static GameObject Box(string name, Transform parent, Vector3 pos, Vector3 size, Material mat)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
             go.name = name;
@@ -277,7 +401,7 @@ namespace SlimeHunter.EditorTools
             return go;
         }
 
-        static GameObject Inst(GameObject prefab, Vector3 pos)
+        internal static GameObject Inst(GameObject prefab, Vector3 pos)
         {
             var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
             go.transform.position = pos;
@@ -292,7 +416,7 @@ namespace SlimeHunter.EditorTools
             return prefab;
         }
 
-        static Material Mat(string name, Color color)
+        internal static Material Mat(string name, Color color)
         {
             EnsureFolder(MatDir);
             string path = $"{MatDir}/{name}.mat";
@@ -310,14 +434,14 @@ namespace SlimeHunter.EditorTools
             return mat;
         }
 
-        static void SetRef(Object target, string field, Object value)
+        internal static void SetRef(Object target, string field, Object value)
         {
             var so = new SerializedObject(target);
             so.FindProperty(field).objectReferenceValue = value;
             so.ApplyModifiedPropertiesWithoutUndo();
         }
 
-        static void SetInt(Object target, string field, int value)
+        internal static void SetInt(Object target, string field, int value)
         {
             var so = new SerializedObject(target);
             so.FindProperty(field).intValue = value;
@@ -343,7 +467,7 @@ namespace SlimeHunter.EditorTools
             throw new System.InvalidOperationException("Sem espaço para criar a camada " + name);
         }
 
-        static void SetFloat(Object target, string field, float value)
+        internal static void SetFloat(Object target, string field, float value)
         {
             var so = new SerializedObject(target);
             so.FindProperty(field).floatValue = value;

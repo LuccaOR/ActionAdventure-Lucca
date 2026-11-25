@@ -25,6 +25,8 @@ namespace SlimeHunter.Combat
         float spawnTime;
 
         public GameObject Owner => owner;
+        /// <summary>Gravidade do arco (para quem atira compensar a mira).</summary>
+        public float Gravity => gravity;
 
         public void Launch(Vector3 initialVelocity, float damageAmount, GameObject shooter)
         {

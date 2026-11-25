@@ -69,6 +69,9 @@ namespace SlimeHunter.Player
             checkpointRotation = rotation;
         }
 
+        /// <summary>Volta ao último checkpoint sem perder vida (ex.: rede de segurança ao cair do mapa).</summary>
+        public void ReturnToCheckpoint() => motor.Teleport(checkpointPosition, checkpointRotation);
+
         void OnSizeDepleted() => LoseLife(false);
 
         void LoseLife(bool backToCheckpoint)

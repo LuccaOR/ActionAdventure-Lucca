@@ -17,16 +17,28 @@ namespace SlimeHunter.Interaction
         [Tooltip("Barras de tamanho recuperadas (Kind = Size).")]
         [SerializeField] float sizeAmount = 1f;
 
+        [Tooltip("0 = some para sempre. >0 = reaparece depois desse tempo (gosma em áreas que exigem tamanho: evita o jogador ficar travado).")]
+        [SerializeField] float respawnSeconds = 0f;
+
         [Header("Visual")]
         [SerializeField] float spinSpeed = 90f;
         [SerializeField] float bobHeight = 0.15f;
         [SerializeField] float bobSpeed = 2f;
 
         Vector3 startPos;
+        Collider trigger;
+        Renderer[] renderers;
+
+        public bool IsAvailable => trigger != null && trigger.enabled;
 
         void Reset() => GetComponent<Collider>().isTrigger = true;
 
-        void Awake() => startPos = transform.position;
+        void Awake()
+        {
+            startPos = transform.position;
+            trigger = GetComponent<Collider>();
+            renderers = GetComponentsInChildren<Renderer>();
+        }
 
         void Update()
         {
@@ -53,7 +65,23 @@ namespace SlimeHunter.Interaction
                     break;
             }
 
-            Destroy(gameObject);
+            if (respawnSeconds > 0f)
+            {
+                SetAvailable(false);
+                Invoke(nameof(Respawn), respawnSeconds);
+            }
+            else
+            {
+                Destroy(gameObject);
+            }
+        }
+
+        void Respawn() => SetAvailable(true);
+
+        void SetAvailable(bool on)
+        {
+            trigger.enabled = on;
+            foreach (var r in renderers) r.enabled = on;
         }
     }
 }

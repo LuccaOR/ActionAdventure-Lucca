@@ -86,6 +86,8 @@ namespace SlimeHunter.Player
         Vector3 planarVelocity;
         float verticalVelocity;
         Vector3 externalVelocity;
+        Vector3 platformDelta;
+        float updraftSpeed;
 
         bool isGrounded;
         bool hopAirborne;
@@ -165,7 +167,9 @@ namespace SlimeHunter.Player
             UpdateVelocity(dt);
 
             float verticalBeforeMove = verticalVelocity;
-            CollisionFlags flags = controller.Move(Velocity * dt);
+            CollisionFlags flags = controller.Move(Velocity * dt + platformDelta);
+            platformDelta = Vector3.zero;
+            updraftSpeed = 0f; // a corrente precisa reaplicar a cada frame
             if ((flags & CollisionFlags.Above) != 0 && verticalVelocity > 0f) verticalVelocity = 0f;
 
             bool wasGrounded = isGrounded;
@@ -206,7 +210,8 @@ namespace SlimeHunter.Player
             if (jumpBufferTimer > 0f || groundedTime < hopGroundTime) return;
             if (WishDirection().sqrMagnitude < 0.01f) return;
 
-            verticalVelocity = Mathf.Sqrt(2f * hopHeight * -gravity);
+            // Saltinho proporcional ao corpo: slime pequeno quica baixo (cabe em passagens estreitas).
+            verticalVelocity = Mathf.Sqrt(2f * hopHeight * transform.lossyScale.y * -gravity);
             hopAirborne = true;
             Hopped?.Invoke();
         }
@@ -248,10 +253,21 @@ namespace SlimeHunter.Player
                     accel = airAcceleration;
                 planarVelocity = Vector3.MoveTowards(planarVelocity, target, accel * dt);
 
-                float g = gravity;
-                if (verticalVelocity < 0f) g *= fallGravityMultiplier;
-                else if (verticalVelocity > 0f && !hopAirborne && !input.JumpHeld) g *= shortHopGravityMultiplier;
-                verticalVelocity = Mathf.Max(verticalVelocity + g * dt, -maxFallSpeed);
+                if (updraftSpeed > 0f)
+                {
+                    // Corrente de vento: sobe até a velocidade do vento e devolve pulo duplo/dash.
+                    verticalVelocity = Mathf.MoveTowards(verticalVelocity, updraftSpeed, 45f * dt);
+                    hopAirborne = false;
+                    airJumpsUsed = 0;
+                    airDashesUsed = 0;
+                }
+                else
+                {
+                    float g = gravity;
+                    if (verticalVelocity < 0f) g *= fallGravityMultiplier;
+                    else if (verticalVelocity > 0f && !hopAirborne && !input.JumpHeld) g *= shortHopGravityMultiplier;
+                    verticalVelocity = Mathf.Max(verticalVelocity + g * dt, -maxFallSpeed);
+                }
             }
 
             externalVelocity = Vector3.MoveTowards(externalVelocity, Vector3.zero, (isGrounded ? 30f : 8f) * dt);
@@ -425,6 +441,16 @@ namespace SlimeHunter.Player
             isSlamming = false;
             hopAirborne = false;
         }
+
+        /// <summary>Corrente de vento ascendente neste frame (chamado pela WindCurrent antes do motor).</summary>
+        public void ApplyUpdraft(float upSpeed)
+        {
+            updraftSpeed = Mathf.Max(updraftSpeed, upSpeed);
+            isSlamming = false;
+        }
+
+        /// <summary>Deslocamento de uma plataforma móvel (elevador) a aplicar neste frame.</summary>
+        public void AddPlatformMotion(Vector3 delta) => platformDelta += delta;
 
         public void Teleport(Vector3 position, Quaternion rotation)
         {

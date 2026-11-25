@@ -394,6 +394,12 @@ MonoBehaviour:
   slamHitMask:
     serializedVersion: 2
     m_Bits: 4294967295
+  speedAtSmallest: 1.35
+  speedAtLargest: 0.7
+  slamPowerAtSmallest: 0.6
+  slamPowerAtLargest: 1.8
+  slamRadiusAtSmallest: 0.75
+  slamRadiusAtLargest: 1.4
 --- !u!114 &2146662843995659754
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -446,10 +452,14 @@ MonoBehaviour:
   chargeDisplayDelay: 0.15
   chargedCostBars: 1
   pelletCount: 8
+  pelletsAtSmallest: 4
+  pelletsAtLargest: 16
   spreadAngle: 9
   pelletDamage: 9
   pelletSpeed: 35
   pelletScale: 0.75
+  shotPaceAtSmallest: 1.4
+  shotPaceAtLargest: 0.75
 --- !u!114 &5880805371561090503
 MonoBehaviour:
   m_ObjectHideFlags: 0

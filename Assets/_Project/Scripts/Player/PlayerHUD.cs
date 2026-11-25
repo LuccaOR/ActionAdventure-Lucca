@@ -24,8 +24,40 @@ namespace SlimeHunter.Player
         GUIStyle label;
         GUIStyle centerLabel;
         GUIStyle bigLabel;
+        GUIStyle titleLabel;
         GUIStyle smallLabel;
         readonly StringBuilder sb = new StringBuilder();
+
+        static string hint;
+        static float hintUntil;
+        static float fadeStart = float.NegativeInfinity;
+        static float fadeDuration = 1f;
+
+        static string areaTitle, areaSubtitle;
+        static float areaStart = float.NegativeInfinity, areaDuration = 3f;
+
+        /// <summary>Nome da área em letras grandes no topo da tela (entra e some com fade).</summary>
+        public static void ShowAreaTitle(string title, string subtitle, float seconds = 3f)
+        {
+            areaTitle = title;
+            areaSubtitle = subtitle;
+            areaStart = Time.time;
+            areaDuration = Mathf.Max(0.5f, seconds);
+        }
+
+        /// <summary>Tela preta que clareia em 'seconds' (portais, teletransporte).</summary>
+        public static void Fade(float seconds)
+        {
+            fadeStart = Time.time;
+            fadeDuration = Mathf.Max(0.05f, seconds);
+        }
+
+        /// <summary>Mostra uma dica na tela por alguns instantes (puzzles chamam enquanto o jogador está perto).</summary>
+        public static void ShowHint(string text, float seconds = 0.25f)
+        {
+            hint = text;
+            hintUntil = Time.time + seconds;
+        }
 
         static readonly Color SizeColor = new Color(0.45f, 0.85f, 1f);
         static readonly Color GrowColor = new Color(0.35f, 0.95f, 0.5f);
@@ -49,6 +81,9 @@ namespace SlimeHunter.Player
         {
             if (!showHud) return;
             EnsureStyles();
+            GUI.color = Color.white;
+            GUI.contentColor = Color.white;
+            GUI.backgroundColor = Color.white;
 
             float w = Screen.width, h = Screen.height;
             Vector2 c = new Vector2(w * 0.5f, h * 0.5f);
@@ -111,6 +146,14 @@ namespace SlimeHunter.Player
                 GUI.Label(new Rect(w - 280, 20, 260, 200), sb.ToString(), label);
             }
 
+            // Dica de puzzle
+            if (!string.IsNullOrEmpty(hint) && Time.time < hintUntil)
+            {
+                var r = new Rect(c.x - 320, h - 170, 640, 34);
+                Fill(r, BackColor);
+                ShadowLabel(r, hint, centerLabel);
+            }
+
             if (controller != null && controller.IsRecovering)
                 GUI.Label(new Rect(0, c.y - 60, w, 40), "BLORP! Perdeu uma vida", centerLabel);
 
@@ -123,6 +166,22 @@ namespace SlimeHunter.Player
                     "E (em cima da poça) absorver · Ctrl/C impacto (no ar) · F interagir · Esc soltar o mouse",
                     smallLabel);
             }
+
+            // Nome da área
+            float at = (Time.time - areaStart) / areaDuration;
+            if (!string.IsNullOrEmpty(areaTitle) && at >= 0f && at < 1f)
+            {
+                float alpha = Mathf.Clamp01(Mathf.Min(at * 6f, (1f - at) * 4f));
+                Color oldColor = GUI.color;
+                GUI.color = new Color(1f, 1f, 1f, alpha);
+                ShadowLabel(new Rect(0, 90, w, 60), areaTitle, titleLabel);
+                if (!string.IsNullOrEmpty(areaSubtitle))
+                    ShadowLabel(new Rect(0, 145, w, 30), areaSubtitle, centerLabel);
+                GUI.color = oldColor;
+            }
+
+            float fade = 1f - (Time.time - fadeStart) / fadeDuration;
+            if (fade > 0f) Fill(new Rect(0, 0, w, h), new Color(0f, 0f, 0f, fade));
 
             if (Cursor.lockState != CursorLockMode.Locked && (controller == null || !controller.IsGameOver))
                 GUI.Label(new Rect(0, c.y - 20, w, 40), "Clique para jogar", centerLabel);
@@ -163,12 +222,28 @@ namespace SlimeHunter.Player
 
         void EnsureStyles()
         {
-            if (label != null) return;
+            // No Unity 6.6 os GUIStyle podem voltar para o padrão (tamanho 0, texto preto) depois de
+            // criados; se isso acontecer, recria. Detectado pelo tamanho da fonte.
+            if (label != null && label.fontSize == 16 && centerLabel.fontSize == 18) return;
             label = new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold };
-            label.normal.textColor = Color.white;
+            // Branco em todos os estados (o skin padrão pode trocar a cor em hover/focus).
+            label.normal.textColor = label.hover.textColor = label.active.textColor =
+                label.focused.textColor = label.onNormal.textColor = Color.white;
+            label.normal.background = null;
             centerLabel = new GUIStyle(label) { alignment = TextAnchor.MiddleCenter, fontSize = 18 };
             bigLabel = new GUIStyle(centerLabel) { fontSize = 56 };
+            titleLabel = new GUIStyle(centerLabel) { fontSize = 40 };
             smallLabel = new GUIStyle(label) { fontSize = 12, fontStyle = FontStyle.Normal };
+        }
+
+        /// <summary>Texto com sombra preta: legível em qualquer fundo.</summary>
+        static void ShadowLabel(Rect r, string text, GUIStyle style)
+        {
+            Color old = style.normal.textColor;
+            style.normal.textColor = Color.black;
+            GUI.Label(new Rect(r.x + 2, r.y + 2, r.width, r.height), text, style);
+            style.normal.textColor = old;
+            GUI.Label(r, text, style);
         }
 
         static void Fill(Rect r, Color color)
