@@ -18,6 +18,10 @@ namespace SlimeHunter.World
         /// <summary>Última área em que o jogador entrou (útil para testes e para salvar progresso).</summary>
         public static string CurrentArea { get; private set; }
 
+        // Play mode sem recarregar o domínio: não herdar a área da sessão anterior.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics() => CurrentArea = null;
+
         public string Title => title;
 
         void Reset() => GetComponent<Collider>().isTrigger = true;

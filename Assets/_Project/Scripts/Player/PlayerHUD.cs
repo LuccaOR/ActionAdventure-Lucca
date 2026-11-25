@@ -36,6 +36,23 @@ namespace SlimeHunter.Player
         static string areaTitle, areaSubtitle;
         static float areaStart = float.NegativeInfinity, areaDuration = 3f;
 
+        /// <summary>
+        /// O projeto entra no Play mode sem recarregar o domínio (Enter Play Mode Options), então estes estáticos
+        /// sobreviveriam entre uma sessão e outra. Um fade iniciado no segundo 150 da sessão anterior deixava a tela
+        /// preta na seguinte (Time.time recomeça do zero). Zera tudo no início de cada Play.
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics()
+        {
+            hint = null;
+            hintUntil = 0f;
+            fadeStart = float.NegativeInfinity;
+            fadeDuration = 1f;
+            areaTitle = areaSubtitle = null;
+            areaStart = float.NegativeInfinity;
+            areaDuration = 3f;
+        }
+
         /// <summary>Nome da área em letras grandes no topo da tela (entra e some com fade).</summary>
         public static void ShowAreaTitle(string title, string subtitle, float seconds = 3f)
         {
@@ -180,8 +197,9 @@ namespace SlimeHunter.Player
                 GUI.color = oldColor;
             }
 
-            float fade = 1f - (Time.time - fadeStart) / fadeDuration;
-            if (fade > 0f) Fill(new Rect(0, 0, w, h), new Color(0f, 0f, 0f, fade));
+            // Clamp: um fadeStart "do futuro" (relógio reiniciado) nunca deixa a tela presa no preto.
+            float fade = Time.time < fadeStart ? 0f : 1f - (Time.time - fadeStart) / fadeDuration;
+            if (fade > 0f) Fill(new Rect(0, 0, w, h), new Color(0f, 0f, 0f, Mathf.Min(1f, fade)));
 
             if (Cursor.lockState != CursorLockMode.Locked && (controller == null || !controller.IsGameOver))
                 GUI.Label(new Rect(0, c.y - 20, w, 40), "Clique para jogar", centerLabel);
